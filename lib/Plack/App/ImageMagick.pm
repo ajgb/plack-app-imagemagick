@@ -1,5 +1,5 @@
 package Plack::App::ImageMagick;
-# ABSTRACT: Create and manipulate images with ImageMagick
+# ABSTRACT: Create and manipulate images with Image::Magick
 
 use strict;
 use warnings;
