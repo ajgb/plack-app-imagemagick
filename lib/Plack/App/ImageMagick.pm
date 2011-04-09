@@ -283,8 +283,10 @@ my %push2stack_img_methods = map { $_ => 1 } qw(
     Transform
 );
 
-sub prepare_app {
-    my $self = shift;
+sub new {
+    my $class = shift;
+
+    my $self = $class->SUPER::new(@_);
 
     die "handler or apply is required"
         unless defined $self->handler || defined $self->apply;
@@ -298,6 +300,8 @@ sub prepare_app {
                 ||
                 defined $self->post_process
             );
+
+    return $self;
 }
 
 sub call {

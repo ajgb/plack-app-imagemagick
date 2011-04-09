@@ -6,7 +6,7 @@ use Plack::Test;
 use Plack::Builder;
 use HTTP::Request::Common;
 
-use Test::More tests => 9;
+use Test::More tests => 14;
 use Test::NoWarnings;
 
 use Plack::App::ImageMagick;
@@ -151,6 +151,50 @@ my $app = builder {
         ];
     };
 };
+
+eval {
+    Plack::App::ImageMagick->new();
+};
+like $@, qr/handler or apply is required/, "handler or apply is required";
+
+eval {
+    Plack::App::ImageMagick->new(
+        handler => sub {},
+        apply => [],
+    );
+};
+like $@, qr/handler and apply are mutually exclusive/,
+    "handler and apply are mutually exclusive";
+
+eval {
+    Plack::App::ImageMagick->new(
+        pre_process => sub {},
+        handler => sub {},
+    );
+};
+like $@, qr/pre\/post processing methods are allowed only for apply option/,
+    "pre/post processing methods are allowed only for apply option";
+
+eval {
+    Plack::App::ImageMagick->new(
+        post_process => sub {},
+        handler => sub {},
+    );
+};
+like $@, qr/pre\/post processing methods are allowed only for apply option/,
+    "pre/post processing methods are allowed only for apply option";
+
+eval {
+    Plack::App::ImageMagick->new(
+        pre_process => sub {},
+        post_process => sub {},
+        handler => sub {},
+    );
+};
+like $@, qr/pre\/post processing methods are allowed only for apply option/,
+    "pre/post processing methods are allowed only for apply option";
+
+
 
 test_psgi $app, sub {
     my $cb = shift;
