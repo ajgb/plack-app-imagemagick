@@ -14,6 +14,8 @@ use Digest::MD5 ();
 use Plack::Request;
 use HTTP::Date ();
 use Plack::Util ();
+use String::Bash ();
+use Try::Tiny;
 
 use Plack::Util::Accessor qw(
     handler
@@ -33,7 +35,7 @@ use Plack::Util::Accessor qw(
     my $thumbnailer_app = Plack::App::ImageMagick->new(
         root => '/path/to/images',
         apply => [
-            Scale => { geometry => "{width:200}x{height:120}" },
+            Scale => { geometry => "%{width:-200}x%{height:-120}" },
             Set => { quality => 30 },
         ],
         with_query => 1,
@@ -43,7 +45,7 @@ use Plack::Util::Accessor qw(
         apply => [
             Set => { size => "100x20" },
             ReadImage => [
-                'xc:{bgcolor:white}',
+                'xc:%{bgcolor:-white}',
             ],
             Set => { magick => "png" },
         ],
@@ -85,7 +87,7 @@ parameters are optional.
     my $app = Plack::App::ImageMagick->new(
         root => '/path/to/images',
         apply => [
-            Scale => { geometry => "{width:200}x{height:120}" },
+            Scale => { geometry => "%{width:-200}x%{height:-120}" },
             Set => { quality => 30 },
         ],
         with_query => 1,
@@ -154,8 +156,8 @@ In essence it is equal to calling C<Read()> before L<"apply"> methods:
 
     my $app = Plack::App::ImageMagick->new(
         apply => [
-            '{method:Scale}' => { geometry => "{width:200}x{height:120}" },
-            Set => { quality => '{quality}' },
+            '%{method:-Scale}' => { geometry => "%{width:-200}x%{height:-120}" },
+            Set => { quality => '%{quality:-30}' },
         ],
         with_query => 1,
     );
@@ -163,22 +165,12 @@ In essence it is equal to calling C<Read()> before L<"apply"> methods:
 Used with L<"apply"> allows to use placeholders which will be replaced with
 values found in query string.
 
-Syntax:
-
-    {param_name[:default_value]}
-
-Default values are permitted (but not required), and will be used if parameter
-was not found in query string.
-
-The C<param_name> is matched with C<\w+>.
+For details about syntax please see L<String::Bash>.
 
 User supplied value (from query string) is validated with C<\A[\w ]+\z>, if
 validation fails I<403 Forbidden> will be thrown.
 
-The C<default_value> can contain any character until closing C<}>.
-
-If parameter is not supplied and there is no default value application will
-throw I<500 Internal Server Error> response.
+Please note that providing default values is recommended.
 
 =head2 cache_dir
 
@@ -276,6 +268,8 @@ L<Image::Magick>
 
 L<Plack>
 
+L<String::Bash>
+
 =cut
 my %replace_img_methods = map { $_ => 1 } qw(
     FlattenImage
@@ -330,32 +324,28 @@ sub call {
         my $req = Plack::Request->new($env);
         my $encoded = JSON::XS::encode_json( $commands || [] );
 
-        my %params = map { $_ => 1 } $encoded =~ /\{([\w]+(?::[^\}]+)?)\}/g;
+        my $query_params = $req->query_parameters;
+        my $params = {};
 
-        for my $param ( keys %params ) {
-            my ($param_name, $param_default) = split(':', $param, 2);
+        for my $param ( $query_params->keys ) {
             # use last value
-            my $val = ($req->query_parameters->get_all($param_name))[-1];
+            my $val = ($query_params->get_all($param))[-1];
 
-            # validate only user params
             if ( $val ) {
                 # special chars forbidden
                 return http_response_403() unless $val =~ /\A[\w ]+\z/s;
 
-            # no replacement
-            } elsif ( ! $param_default ) {
-                return http_response_500();
-
-            # use default
-            } else {
-                $val = $param_default;
-            }
-
-            $encoded =~ s/\{\Q$param\E\}/$val/g;
+                $params->{ $param } = $val;
+            };
         };
 
         # params expanded
-        $commands = JSON::XS::decode_json($encoded);
+        try {
+            $commands = JSON::XS::decode_json( String::Bash::bash($encoded, $params) );
+        } catch {
+            warn "Parsing query failed: $_";
+            return http_response_500();
+        };
     }
 
     my $handler;

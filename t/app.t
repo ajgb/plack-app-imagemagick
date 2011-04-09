@@ -40,8 +40,8 @@ my $app = builder {
         root => "t/images",
         apply => [
             Set => { quality => 30 },
-            Colorize => { opacity => '{opacity}%', fill => '{color}'},
-            '{method}' => { geometry => '200x120' }
+            Colorize => { opacity => '%{opacity}%', fill => '%{color}'},
+            '%{method}' => { geometry => '200x120' }
         ],
         with_query => 1,
     );
@@ -81,7 +81,7 @@ my $app = builder {
         apply => [
             Set => { size => "1x1" },
             ReadImage => [
-                'xc:{color}',
+                'xc:%{color}',
             ],
             Set => { magick => "png" },
         ],
@@ -92,12 +92,12 @@ my $app = builder {
         apply => [
             Set => { size => "100x20" },
             ReadImage => [
-                'xc:{bgcolor:white}',
+                'xc:%{bgcolor:-white}',
             ],
             Set => { magick => "png" },
             Annotate => {
-                text => '{text:[^ Hello! ^]}',
-                fill => '{color:black}',
+                text => '%{text:-[^ Hello! ^]}',
+                fill => '%{color:-black}',
                 pointsize => 16,
                 gravity => 'Center',
             },
