@@ -476,32 +476,13 @@ sub _create_response_from_cache {
     };
 
 
-    #TODO to be replaced with Plack::App::File, when content_type will hit CPAN
-    open my $fh, "<:raw", $file_path,
-        or return $self->http_response_403;
+    my $file_app = Plack::App::File->new(
+        file => $file_path,
+        content_type => $content_type,
+    );
 
-    my @stat = stat $file_path;
-
-    Plack::Util::set_io_path($fh, Cwd::realpath($file_path));
-
-    return [
-        200,
-        [
-            'Content-Type'   => $content_type,
-            'Content-Length' => $stat[7],
-            'Last-Modified'  => HTTP::Date::time2str( $stat[9] )
-        ],
-        $fh,
-    ];
-
-# waiting for Plack update
-#    my $file_app = Plack::App::File->new(
-#        file => $file_path,
-#        content_type => $content_type,
-#    );
-#
-#    local $env->{PATH_INFO} = $file_path;
-#    return $file_app->call( $env );
+    local $env->{PATH_INFO} = $file_path;
+    return $file_app->call( $env );
 };
 
 sub _create_response_from_img {
