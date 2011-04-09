@@ -6,7 +6,7 @@ use Plack::Test;
 use Plack::Builder;
 use HTTP::Request::Common;
 
-use Test::More tests => 14;
+use Test::More tests => 23;
 use Test::NoWarnings;
 
 use Plack::App::ImageMagick;
@@ -63,6 +63,7 @@ my $app = builder {
         ],
     );
     mount "/images/fx/" => Plack::App::ImageMagick->new(
+        cache_dir => "t/images/cache",
         root => "t/images",
         apply => [
             Clone => 1,
@@ -134,6 +135,26 @@ my $app = builder {
         },
     );
 
+    mount "/images/unknownmethod/" => Plack::App::ImageMagick->new(
+        apply => [
+            '%{method}' => { geometry => '200x120' }
+        ],
+        with_query => 1,
+    );
+    mount "/images/image_not_found/" => Plack::App::ImageMagick->new(
+        root => "t/images",
+        apply => [
+            Set => { quality => 30 },
+        ],
+    );
+    mount "/images/methodfails/" => Plack::App::ImageMagick->new(
+        apply => [
+            Read => [ "t/non/existent/image.png" ],
+        ],
+    );
+
+
+
     mount "/" => sub {
         return [
             200, [ 'Content-Type' => 'text/html' ],
@@ -160,11 +181,36 @@ like $@, qr/handler or apply is required/, "handler or apply is required";
 eval {
     Plack::App::ImageMagick->new(
         handler => sub {},
-        apply => [],
+        apply => [ ReadImage => [ 'xc:white' ] ],
     );
 };
 like $@, qr/handler and apply are mutually exclusive/,
     "handler and apply are mutually exclusive";
+
+eval {
+    Plack::App::ImageMagick->new(
+        apply => {},
+    );
+};
+like $@, qr/apply should be non-empty array reference/,
+    "apply should be non-empty array reference";
+
+eval {
+    Plack::App::ImageMagick->new(
+        apply => [],
+    );
+};
+like $@, qr/apply should be non-empty array reference/,
+    "apply should be non-empty array reference";
+
+eval {
+    Plack::App::ImageMagick->new(
+        handler => sub {},
+        with_query => [],
+    );
+};
+like $@, qr/with_query requires apply/,
+    "with_query requires apply";
 
 eval {
     Plack::App::ImageMagick->new(
@@ -269,9 +315,11 @@ test_psgi $app, sub {
     ok ! $ref_fx->Difference( image => $out_fx ),
         "Fx via apply";
 
+    unlink("t/images/cache/48c184fdd2999a7ae824071bb128f7c8");
+
     # 6
     my $res_pix = $cb->(
-        GET '/images/pix/1x1.png?color=red'
+        GET '/images/pix/1x1.png?color=red&foo='
     );
 
     my $ref_pix = Image::Magick->new();
@@ -282,6 +330,8 @@ test_psgi $app, sub {
 
     ok ! $ref_pix->Difference( image => $out_pix ),
         "image via with_query created";
+
+    unlink("t/images/cache/f9a434bb29320e1703a62a14ba378d12");
 
     # 7
     my $res_text = $cb->(
@@ -310,5 +360,41 @@ test_psgi $app, sub {
 
     ok ! $ref_prepost->Difference( image => $out_prepost ),
         "pre/post processing executed";
+
+    # 9
+    {
+        local $SIG{__WARN__} = sub {
+            like shift @_, qr/^Undefined method at index: 0/,
+                "expected warning thrown";
+        };
+        my $res_unknownmethod = $cb->(
+            GET '/images/unknownmethod/Camelia.png'
+        );
+        is $res_unknownmethod->code, 500, "invalid params throw 500";
+    }
+
+    # 10
+    {
+        local $SIG{__WARN__} = sub {
+            like shift @_, qr/^Read\([^\)]+\) failed:/,
+                "expected warning thrown";
+        };
+        my $res_image_not_found = $cb->(
+            GET '/images/image_not_found/camel.png'
+        );
+        is $res_image_not_found->code, 404, "failed Read throws 404";
+    }
+
+    # 11
+    {
+        local $SIG{__WARN__} = sub {
+            like shift @_, qr/^Read\([^\)]+\) failed:/,
+                "expected warning thrown";
+        };
+        my $res_methodfails = $cb->(
+            GET '/images/methodfails/image.png'
+        );
+        is $res_methodfails->code, 500, "failed method throws 500";
+    }
 
 }
